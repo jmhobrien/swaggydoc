@@ -442,21 +442,42 @@ class SwaggyDataService {
             GrailsDomainClass domainClass = grailsApplication.domainClasses.find {
                 it.clazz == model
             } as GrailsDomainClass
-            /** Duck typing here:
-             * if model has a GrailsDomainClass then props will be list of GrailsDomainClassProperty objects
-             * otherwise props will be a list of Field objects
-             * Interface for these two classes are similar enough to duck type for our purposes
-             */
-            def fieldSource = domainClass ?
-                    [domainClass.identifier, domainClass.version] + domainClass.persistentProperties.toList()
-                    : model.declaredFields
 
-            def props = fieldSource.
-                    findAll {
-                        !it.toString().contains(' static ') &&
-                                !it.toString().contains(' transient ') &&
-                                it.name != 'errors'
-                    }
+	  def props=[];
+
+	  if(domainClass) {
+            def fieldSource = [domainClass.identifier+domainClass.version] + domainClass.persistentProperties.toList()
+            fieldSource.each { GrailsDomainClassProperty prop ->
+		  Class c = domainClass.getClazz();
+		  def decFields=domainClass.getClazz().declaredFields;
+		  def thisField = decFields.find{field->
+		      field.name==prop.name
+		  };
+		  if(!prop.toString().contains(' static ') &&
+		      !prop.toString().contains(' transient ') &&
+		      prop.name != 'errors' &&
+		      !(
+			  thisField &&
+			  thisField.isAnnotationPresent(ApiModelProperty) &&
+			  thisField.getAnnotation(ApiModelProperty).hidden()==true
+		      )
+		  ) {
+		      props.add(prop);
+		  }
+	      }
+	  } else {
+	    //Non-grails domain class - Hidden properties not implemented yet!
+            def fieldSource = model.declaredFields;
+            props = fieldSource.
+		findAll { java.lang.reflect.Field field ->
+		    !field.toString().contains(' static ') &&
+			    !field.toString().contains(' transient ') &&
+			    field.name != 'errors' &&
+			    field.getAnnotation(ApiModelProperty) &&
+			    field.getAnnotation(ApiModelProperty).value()!=true
+		}
+	  }
+
 
 
             Map<String, ConstrainedProperty> constrainedProperties = domainClass?.constrainedProperties
