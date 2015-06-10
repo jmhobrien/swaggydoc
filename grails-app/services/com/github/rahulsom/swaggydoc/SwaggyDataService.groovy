@@ -443,41 +443,69 @@ class SwaggyDataService {
                 it.clazz == model
             } as GrailsDomainClass
 
-	  def props=[];
+            def requiredProps=[];
+            def optionalProps=[];
 
-	  if(domainClass) {
-            def fieldSource = [domainClass.identifier+domainClass.version] + domainClass.persistentProperties.toList()
-            fieldSource.each { GrailsDomainClassProperty prop ->
-		  Class c = domainClass.getClazz();
-		  def decFields=domainClass.getClazz().declaredFields;
-		  def thisField = decFields.find{field->
-		      field.name==prop.name
-		  };
-		  if(!prop.toString().contains(' static ') &&
-		      !prop.toString().contains(' transient ') &&
-		      prop.name != 'errors' &&
-		      !(
-			  thisField &&
-			  thisField.isAnnotationPresent(ApiModelProperty) &&
-			  thisField.getAnnotation(ApiModelProperty).hidden()==true
-		      )
-		  ) {
-		      props.add(prop);
-		  }
-	      }
-	  } else {
-	    //Non-grails domain class - Hidden properties not implemented yet!
-            def fieldSource = model.declaredFields;
-            props = fieldSource.
-		findAll { java.lang.reflect.Field field ->
-		    !field.toString().contains(' static ') &&
-			    !field.toString().contains(' transient ') &&
-			    field.name != 'errors' &&
-			    field.getAnnotation(ApiModelProperty) &&
-			    field.getAnnotation(ApiModelProperty).value()!=true
-		}
-	  }
+            if(domainClass) {
+                log.debug("class: "+domainClass.name)
+                def fieldSource = domainClass.properties.toList()
+                fieldSource.
+                        each { GrailsDomainClassProperty prop ->
+                            Class c = domainClass.getClazz();
+                            def decFields=domainClass.getClazz().declaredFields;
+                            def thisField = decFields.find{field->
+                                field.name==prop.name
+                            };
+                            //def annoExists=thisField.isAnnotationPresent(ApiModelProperty)
+                            //def anno=thisField.getAnnotation(ApiModelProperty)//.hidden();
+                            def isHidden=( thisField &&
+                                            thisField.isAnnotationPresent(ApiModelProperty) &&
+                                            thisField.getAnnotation(ApiModelProperty).hidden()==true
+                            );
+                            def isOptional=( thisField &&
+                                    thisField.isAnnotationPresent(ApiModelProperty) &&
+                                    thisField.getAnnotation(ApiModelProperty).required()==false
+                            );
+                            if(!prop.toString().contains(' static ') &&
+                                !prop.toString().contains(' transient ') &&
+                                prop.name != 'errors' &&
+                                    prop.name != 'version' &&
+                                    !isHidden
+                            ) {
+                                if(isOptional) {
+                                    optionalProps.add(prop)
+                                } else {
+                                    requiredProps.add(prop)
+                                }
+                            }
+                        }
+                //log.debug(props)
+            } else {
+                def fieldSource = model.declaredFields;
+                fieldSource.each { java.lang.reflect.Field field ->
+                    def isHidden=(field.isAnnotationPresent(ApiModelProperty) &&
+                            field.getAnnotation(ApiModelProperty).hidden()==true
+                    );
+                    def isOptional=(field.isAnnotationPresent(ApiModelProperty) &&
+                            field.getAnnotation(ApiModelProperty).required()==false
+                    );
 
+                    if(!field.toString().contains(' static ') &&
+                       !field.toString().contains(' transient ') &&
+                            field.name != 'errors' &&
+                            !isHidden
+                       ) {
+                        if(isOptional) {
+                            optionalProps.add(field)
+                        } else {
+                            requiredProps.add(field)
+                        }
+                    }
+                }
+
+            }
+
+            def props=requiredProps+optionalProps;
 
 
             Map<String, ConstrainedProperty> constrainedProperties = domainClass?.constrainedProperties
@@ -639,7 +667,15 @@ class SwaggyDataService {
     @SuppressWarnings("GrMethodMayBeStatic")
     private List<String> getHttpMethod(GrailsClass theController, Method method) {
         try {
-            def retval = theController.referenceInstance.allowedMethods[method.name] ?: 'GET'
+            def retval='GET'
+
+            retval = theController.referenceInstance.allowedMethods[method.name] ?: retval;
+
+            if(method.isAnnotationPresent(ApiOperation)) {
+                def anno = method.getAnnotation(ApiOperation);
+                retval=(anno.httpMethod()!=null&&anno.httpMethod()!="")?anno.httpMethod():retval;
+            }
+            
             if (retval instanceof String) {
                 log.debug "[Returned] ${method.name} supports [$retval]"
                 [retval]
