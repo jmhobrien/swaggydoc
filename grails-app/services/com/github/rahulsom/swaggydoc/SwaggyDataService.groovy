@@ -154,7 +154,7 @@ class SwaggyDataService {
 
         def absoluteBasePath = grailsLinkGenerator.link(uri: '', absolute: true)
         def basePath = grailsLinkGenerator.link(uri: '')
-        def resourcePath = grailsLinkGenerator.link(controller: theController.logicalPropertyName)
+        def resourcePath = basePath+"/"+theController.logicalPropertyName
         def domainName = slugToDomain(controllerName)
 
         // These preserve the path components supporting hierarchical paths discovered through URL mappings
